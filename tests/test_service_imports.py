@@ -112,6 +112,46 @@ class ServiceImportTests(unittest.TestCase):
                     SelectionTarget("x1test", xqmc_keyword="南校区"),
                 ])
 
+    def test_auto_selection_logs_every_polling_round_when_state_is_unchanged(self):
+        class FakeAuth:
+            def require_session(self):
+                return object()
+
+        record = {
+            "KCDM": "X2FL2130", "KCMC": "测试目标", "BJDM": "BJ001", "BJMC": "01班",
+            "XQMC": "北校区", "KXRS": 30, "DQRS": 30, "_lx": "0",
+        }
+        logs = []
+        stop_event = threading.Event()
+        wait_count = 0
+
+        def stop_on_third_round(_seconds, _event):
+            nonlocal wait_count
+            wait_count += 1
+            if wait_count == 3:
+                stop_event.set()
+                return True
+            return False
+
+        service = CourseService(FakeAuth(), logs.append)
+        with patch.object(chooser, "getPublicInfo", return_value={"csrfToken": "token"}), \
+             patch.object(chooser, "queryCourseList", return_value=[record]) as query, \
+             patch.object(service, "_wait", side_effect=stop_on_third_round):
+            with self.assertRaisesRegex(RuntimeError, "自动抢课已停止"):
+                service.auto_select(
+                    SelectionTarget("X2FL2130", poll_interval=1),
+                    stop_event,
+                )
+
+        starts = [line for line in logs if "轮询第" in line and "轮开始" in line]
+        completions = [line for line in logs if "轮询第" in line and "轮完成" in line]
+        self.assertEqual(query.call_count, 3)
+        self.assertEqual(len(starts), 3)
+        self.assertEqual(len(completions), 3)
+        self.assertIn("轮询第 1 轮开始", starts[0])
+        self.assertIn("轮询第 3 轮开始", starts[2])
+        self.assertEqual(sum("当前教学班" in line for line in logs), 1)
+
     def test_drop_course_uses_exact_bjdm_and_verifies_removal(self):
         class FakeAuth:
             def require_session(self):

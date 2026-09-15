@@ -176,6 +176,7 @@ class CourseService:
         pending = {index: target for index, target in enumerate(target_list)}
         selected: dict[int, dict] = {}
         last_states: dict[int, str] = {}
+        round_number = 0
 
         self.log("开始多目标自动抢课，共 {0} 个目标".format(len(target_list)))
         for index, target in pending.items():
@@ -189,7 +190,15 @@ class CourseService:
                 self.log(message)
 
         while pending and (stop_event is None or not stop_event.is_set()):
+            round_number += 1
             started = time.monotonic()
+            self.log(
+                "轮询第 {0} 轮开始：正在获取课程列表（待完成 {1}/{2}）".format(
+                    round_number,
+                    len(pending),
+                    len(target_list),
+                )
+            )
             try:
                 records = chooser.queryCourseList(
                     session,
@@ -299,11 +308,21 @@ class CourseService:
             except requests.RequestException as exc:
                 self.log("网络异常：{0}".format(exc))
 
-            if pending:
+            if pending and (stop_event is None or not stop_event.is_set()):
                 elapsed = time.monotonic() - started
                 interval = min(target.poll_interval for target in pending.values())
-                if self._wait(max(0.0, interval - elapsed), stop_event):
+                wait_seconds = max(0.0, interval - elapsed)
+                self.log(
+                    "轮询第 {0} 轮完成：仍有 {1} 个目标等待，{2:.1f} 秒后继续".format(
+                        round_number,
+                        len(pending),
+                        wait_seconds,
+                    )
+                )
+                if self._wait(wait_seconds, stop_event):
                     break
+            elif not pending:
+                self.log("轮询第 {0} 轮完成：全部目标已完成".format(round_number))
 
         if pending:
             raise RuntimeError("自动抢课已停止")

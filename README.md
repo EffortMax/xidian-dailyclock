@@ -17,8 +17,10 @@
 - 桌面端可按精确 BJDM 退掉已选课程；提交前必须连续确认两次，提交后还会复核课程已移除。
 - 验证码支持 ddddocr 无人值守识别，也支持桌面弹窗人工输入。
 - 多目标任务每轮只拉取一次课程列表，各目标保留独立的课程代码、教学班、校区和空结果策略。
+- 自动选课每轮都会输出开始、待处理目标数和下次等待时间，课程状态细节仅在变化时重复提示。
 - 选课只有在两阶段接口完成且“已选课程”复核成功后才会报告成功。
 - 会话过期、异常页及瞬时网络故障可以自动恢复或重试。
+- 桌面运行日志支持拖动调整、展开查看、自动滚动、复制、保存、清空和时间戳，并记忆面板尺寸。
 - 命令行日志按大小自动轮转，默认单文件 1 MB，保留 5 份历史文件。
 - 课表以 UTF-8 BOM CSV 导出，可用于 Excel 或 WakeUp 课程表。
 
@@ -26,22 +28,30 @@
 
 从 GitHub [Releases](https://github.com/EffortMax/xidian-dailyclock/releases) 下载：
 
-- `XDU-Course-Assistant-v0.3.1-windows-x64.exe`
+- `XDU-Course-Assistant-v0.3.2-windows-x64.exe`
 - 同名 `.sha256` 校验文件
 
 EXE 是包含 PySide6、ddddocr、ONNX 模型与运行时的 Windows x64 单文件版本，不需要预装 Python。单文件程序首次启动需要解压依赖，可能等待数秒；Windows SmartScreen 若提示未知发布者，请先核对下载来源和 SHA-256。
 
+### v0.3.2 更新
+
+- 修复自动选课在课程状态不变时只有第一轮可见日志的问题；现在每轮都有编号心跳与下次等待提示。
+- 自动选课服务日志统一通过 Qt 工作线程信号回到主线程，避免后台线程直接更新日志控件。
+- 统一页面边距、表单间距和按钮尺寸，并把目标队列、课程操作与自动任务按钮按用途分组。
+- 运行日志区改为可拖动分隔面板，默认显示更多内容，并支持一键展开和恢复。
+- 日志工具栏新增自动滚动、复制全部、UTF-8 保存、确认清空、条数统计和时间戳；面板尺寸及自动滚动设置会在下次启动时恢复。
+
 v0.3.1 的 GitHub Actions 发布附件为 `63.54 MiB`，相对 v0.3.0 的 `189.74 MiB` 减少 `66.51%`；只保留 OCR 分类所需模型与 Qt Widgets 运行链路，详细依据和归档清单见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)。
 
 ```powershell
-Get-FileHash .\XDU-Course-Assistant-v0.3.1-windows-x64.exe -Algorithm SHA256
-.\XDU-Course-Assistant-v0.3.1-windows-x64.exe
+Get-FileHash .\XDU-Course-Assistant-v0.3.2-windows-x64.exe -Algorithm SHA256
+.\XDU-Course-Assistant-v0.3.2-windows-x64.exe
 ```
 
 发布包还提供无网络、无选课副作用的依赖自检：
 
 ```powershell
-.\XDU-Course-Assistant-v0.3.1-windows-x64.exe --self-test
+.\XDU-Course-Assistant-v0.3.2-windows-x64.exe --self-test
 $LASTEXITCODE  # 0 表示 OCR 模型、ONNX Runtime 与 Windows DPAPI 均通过
 ```
 
@@ -135,7 +145,7 @@ $env:QT_QPA_PLATFORM = "offscreen"
 python -m unittest discover -s tests -v
 ```
 
-当前版本 25 项测试覆盖模型校验、DPAPI 凭据文件、OpenCV 缺失兼容层、精确 BJDM 退课及最终复核、桌面两次确认、单/多目标选课编排、每轮课程列表复用、筛选放宽策略、日志轮转、课表导出和 UI 冒烟。
+当前版本 31 项测试覆盖模型校验、DPAPI 凭据文件、OpenCV 缺失兼容层、精确 BJDM 退课及最终复核、桌面两次确认、单/多目标选课编排、每轮课程列表复用、筛选放宽策略、轮询心跳、日志轮转、日志面板交互、课表导出和 UI 冒烟。
 
 复现 Windows 发布包：
 
@@ -144,7 +154,7 @@ python scripts\install_build_dependencies.py
 python scripts\build_release.py
 ```
 
-产物和校验文件写入 `release\`。v0.3.0 的初版构建记录见 [`docs/release-v0.3.0.md`](docs/release-v0.3.0.md)，v0.3.1 的优化构建与归档验证见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)。
+产物和校验文件写入 `release\`。v0.3.0 的初版构建记录见 [`docs/release-v0.3.0.md`](docs/release-v0.3.0.md)，v0.3.1 的优化构建与归档验证见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)，v0.3.2 的本地构建验证见 [`docs/release-v0.3.2.md`](docs/release-v0.3.2.md)，更新介绍见 [`packaging/github-release-v0.3.2.md`](packaging/github-release-v0.3.2.md)。
 
 EXE 的模型、OpenCV、Pillow、Qt 与环境污染项审计见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)；Review 通过的第一轮裁剪已应用到 v0.3.1 发布配置。
 

@@ -3,11 +3,12 @@ from __future__ import annotations
 import contextlib
 import io
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QObject, QSettings, QThread, Qt, Signal
+from PySide6.QtGui import QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -23,7 +24,9 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
+    QSplitter,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -37,6 +40,32 @@ from app.models import CourseClass, SelectionTarget
 from app.services.auth_service import AuthService
 from app.services.course_service import CourseService
 from app.services.timetable_service import TimetableService
+
+
+PAGE_MARGINS = (12, 10, 12, 10)
+PAGE_SPACING = 8
+CONTROL_SPACING = 6
+FORM_HORIZONTAL_SPACING = 12
+FORM_VERTICAL_SPACING = 6
+
+
+def configure_form_layout(form: QFormLayout) -> None:
+    form.setContentsMargins(0, 0, 0, 0)
+    form.setHorizontalSpacing(FORM_HORIZONTAL_SPACING)
+    form.setVerticalSpacing(FORM_VERTICAL_SPACING)
+    form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+
+def configure_page_layout(layout: QVBoxLayout) -> None:
+    layout.setContentsMargins(*PAGE_MARGINS)
+    layout.setSpacing(PAGE_SPACING)
+
+
+def configure_action_button(button: QPushButton, minimum_width: int = 88) -> None:
+    button.setMinimumWidth(minimum_width)
+    button.setMinimumHeight(30)
+    button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
 
 
 class _Stream(io.TextIOBase):
@@ -123,14 +152,21 @@ class LoginPage(QWidget):
             self.status.setText("已加载本机加密保存的账户")
 
         form = QFormLayout()
+        configure_form_layout(form)
         form.addRow("学号", self.user_edit)
         form.addRow("密码", self.password_edit)
+        configure_action_button(self.login_button, 144)
+        login_actions = QHBoxLayout()
+        login_actions.setSpacing(CONTROL_SPACING)
+        login_actions.addWidget(self.login_button)
+        login_actions.addStretch(1)
         layout = QVBoxLayout(self)
+        configure_page_layout(layout)
         layout.addLayout(form)
         layout.addWidget(self.unattended)
         layout.addWidget(self.force_login)
         layout.addWidget(self.remember_credentials)
-        layout.addWidget(self.login_button)
+        layout.addLayout(login_actions)
         layout.addWidget(self.status)
         layout.addStretch()
 
@@ -225,9 +261,13 @@ class CoursePage(QWidget):
         self.interval = QSpinBox()
         self.interval.setRange(1, 3600)
         self.interval.setValue(15)
+        self.interval.setMinimumWidth(120)
+        self.interval.setMaximumWidth(160)
         self.empty_policy = QComboBox()
         for value, label in self.POLICY_LABELS.items():
             self.empty_policy.addItem(label, value)
+        self.empty_policy.setMinimumWidth(180)
+        self.empty_policy.setMaximumWidth(240)
         self.unattended = QCheckBox("无人值守验证码")
         self.unattended.setChecked(True)
         self.unattended.stateChanged.connect(lambda state: self.auth.set_unattended(bool(state)))
@@ -242,6 +282,18 @@ class CoursePage(QWidget):
         self.add_target_button = QPushButton("添加到目标队列")
         self.remove_target_button = QPushButton("移除选中目标")
         self.clear_targets_button = QPushButton("清空目标")
+        for button, minimum_width in (
+            (self.query_button, 88),
+            (self.use_selected_button, 128),
+            (self.chosen_button, 112),
+            (self.drop_button, 112),
+            (self.start_button, 120),
+            (self.stop_button, 80),
+            (self.add_target_button, 128),
+            (self.remove_target_button, 112),
+            (self.clear_targets_button, 88),
+        ):
+            configure_action_button(button, minimum_width)
         self.target_table = QTableWidget(0, 5)
         self.target_table.setHorizontalHeaderLabels(
             ["课程代码", "教学班代码", "教学班筛选", "校区筛选", "无结果策略"]
@@ -266,6 +318,7 @@ class CoursePage(QWidget):
         self.stop_button.clicked.connect(self.stop_task)
 
         form = QFormLayout()
+        configure_form_layout(form)
         form.addRow("课程代码 KCDM", self.kcdm)
         form.addRow("教学班代码 BJDM（可选）", self.bjdm)
         form.addRow("教学班筛选", self.bj_filter)
@@ -273,24 +326,34 @@ class CoursePage(QWidget):
         form.addRow("查询关键字", self.keyword)
         form.addRow("轮询间隔（秒）", self.interval)
         form.addRow("未找到教学班时", self.empty_policy)
-        target_buttons = QHBoxLayout()
-        target_buttons.addWidget(self.add_target_button)
-        target_buttons.addWidget(self.remove_target_button)
-        target_buttons.addWidget(self.clear_targets_button)
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.query_button)
-        buttons.addWidget(self.use_selected_button)
-        buttons.addWidget(self.chosen_button)
-        buttons.addWidget(self.drop_button)
-        buttons.addWidget(self.start_button)
-        buttons.addWidget(self.stop_button)
+
+        target_toolbar = QHBoxLayout()
+        target_toolbar.setSpacing(CONTROL_SPACING)
+        target_toolbar.addWidget(QLabel("自动抢课目标队列（每轮只请求一次课程列表）"))
+        target_toolbar.addStretch(1)
+        target_toolbar.addWidget(self.add_target_button)
+        target_toolbar.addWidget(self.remove_target_button)
+        target_toolbar.addWidget(self.clear_targets_button)
+
+        action_toolbar = QHBoxLayout()
+        action_toolbar.setSpacing(CONTROL_SPACING)
+        action_toolbar.addWidget(QLabel("课程操作"))
+        action_toolbar.addWidget(self.query_button)
+        action_toolbar.addWidget(self.use_selected_button)
+        action_toolbar.addWidget(self.chosen_button)
+        action_toolbar.addWidget(self.drop_button)
+        action_toolbar.addStretch(1)
+        action_toolbar.addWidget(QLabel("自动任务"))
+        action_toolbar.addWidget(self.start_button)
+        action_toolbar.addWidget(self.stop_button)
+
         layout = QVBoxLayout(self)
+        configure_page_layout(layout)
         layout.addLayout(form)
         layout.addWidget(self.unattended)
-        layout.addWidget(QLabel("自动抢课目标队列（每轮只请求一次课程列表）"))
-        layout.addLayout(target_buttons)
+        layout.addLayout(target_toolbar)
         layout.addWidget(self.target_table)
-        layout.addLayout(buttons)
+        layout.addLayout(action_toolbar)
         layout.addWidget(QLabel("课程查询结果"))
         layout.addWidget(self.table)
         self.table_mode = "available"
@@ -491,7 +554,17 @@ class CoursePage(QWidget):
             return
         self.set_busy(True)
         self.stop_button.setEnabled(True)
-        self.thread = TaskThread(lambda _log, stop: self.service.auto_select_many(targets, stop))
+
+        def task(log: Callable[[str], None], stop: threading.Event):
+            # 服务日志必须通过 TaskThread 信号回到 Qt 主线程，避免工作线程直接操作 QTextEdit。
+            original_log = self.service.log
+            self.service.log = log
+            try:
+                return self.service.auto_select_many(targets, stop)
+            finally:
+                self.service.log = original_log
+
+        self.thread = TaskThread(task)
         self.thread.log_line.connect(self.log)
         self.thread.succeeded.connect(self.selection_succeeded)
         self.thread.failed.connect(self.task_failed)
@@ -543,16 +616,24 @@ class TimetablePage(QWidget):
         self.path = QLineEdit(str(Path.cwd() / "course.csv"))
         browse = QPushButton("选择文件")
         export = QPushButton("导出 CSV")
+        configure_action_button(browse, 96)
+        configure_action_button(export, 96)
         browse.clicked.connect(self.choose_path)
         export.clicked.connect(self.export)
         form = QFormLayout()
+        configure_form_layout(form)
         form.addRow("学期（可选）", self.semester)
         form.addRow("导出路径", self.path)
+        actions = QHBoxLayout()
+        actions.setSpacing(CONTROL_SPACING)
+        actions.addWidget(browse)
+        actions.addWidget(export)
+        actions.addStretch(1)
         layout = QVBoxLayout(self)
+        configure_page_layout(layout)
         layout.addLayout(form)
         layout.addWidget(self.include_unscheduled)
-        layout.addWidget(browse)
-        layout.addWidget(export)
+        layout.addLayout(actions)
         layout.addStretch()
 
     def choose_path(self) -> None:
@@ -579,31 +660,185 @@ class TimetablePage(QWidget):
 
 
 class MainWindow(QMainWindow):
+    DEFAULT_LOG_SPLITTER_SIZES = [500, 180]
+    NORMAL_TABS_MINIMUM_HEIGHT = 360
+    EXPANDED_TABS_MINIMUM_HEIGHT = 180
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("西电研究生选课助手 {0}".format(__version__))
         self.resize(1180, 720)
+        self.settings = QSettings("EffortMax", "DailyClockXDU")
+        self.log_line_count = 0
+        self.log_expanded = False
+        self.log_restore_sizes: list[int] | None = None
         self.auth = AuthService()
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
+        self.log_view.setAcceptRichText(False)
+        self.log_count_label = QLabel("运行日志（0 条）")
+        self.log_auto_scroll = QCheckBox("自动滚动")
+        self.log_auto_scroll.setChecked(self._setting_as_bool(
+            self.settings.value("ui/log_auto_scroll", True)
+        ))
+        self.copy_log_button = QPushButton("复制全部")
+        self.save_log_button = QPushButton("保存日志")
+        self.clear_log_button = QPushButton("清空")
+        self.expand_log_button = QPushButton("展开日志")
+        for button, minimum_width in (
+            (self.copy_log_button, 88),
+            (self.save_log_button, 88),
+            (self.clear_log_button, 72),
+            (self.expand_log_button, 88),
+        ):
+            configure_action_button(button, minimum_width)
+        self.log_auto_scroll.toggled.connect(self.remember_log_auto_scroll)
+        self.copy_log_button.clicked.connect(self.copy_all_logs)
+        self.save_log_button.clicked.connect(self.save_logs)
+        self.clear_log_button.clicked.connect(self.clear_logs)
+        self.expand_log_button.clicked.connect(self.toggle_log_expansion)
+
         self.login_page = LoginPage(self.auth, self.log_line)
         self.course_page = CoursePage(self.auth, self.log_line)
         self.timetable_page = TimetablePage(self.auth, self.log_line)
         self.login_page.unattended.stateChanged.connect(self.course_page.unattended.setChecked)
         self.course_page.unattended.stateChanged.connect(self.login_page.unattended.setChecked)
-        tabs = QTabWidget()
-        tabs.addTab(self.login_page, "登录")
-        tabs.addTab(self.course_page, "选课 / 自动抢课")
-        tabs.addTab(self.timetable_page, "课表导出")
+        self.tabs = QTabWidget()
+        self.tabs.setMinimumHeight(self.NORMAL_TABS_MINIMUM_HEIGHT)
+        self.tabs.addTab(self.login_page, "登录")
+        self.tabs.addTab(self.course_page, "选课 / 自动抢课")
+        self.tabs.addTab(self.timetable_page, "课表导出")
+
+        log_header = QHBoxLayout()
+        log_header.setSpacing(CONTROL_SPACING)
+        log_header.addWidget(self.log_count_label)
+        log_header.addStretch(1)
+        log_header.addWidget(self.log_auto_scroll)
+        log_header.addWidget(self.copy_log_button)
+        log_header.addWidget(self.save_log_button)
+        log_header.addWidget(self.clear_log_button)
+        log_header.addWidget(self.expand_log_button)
+
+        self.log_panel = QWidget()
+        self.log_panel.setMinimumHeight(120)
+        log_layout = QVBoxLayout(self.log_panel)
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_layout.setSpacing(CONTROL_SPACING)
+        log_layout.addLayout(log_header)
+        log_layout.addWidget(self.log_view)
+
+        self.log_splitter = QSplitter(Qt.Vertical)
+        self.log_splitter.setChildrenCollapsible(False)
+        self.log_splitter.setHandleWidth(6)
+        self.log_splitter.addWidget(self.tabs)
+        self.log_splitter.addWidget(self.log_panel)
+        self.log_splitter.setStretchFactor(0, 3)
+        self.log_splitter.setStretchFactor(1, 1)
+        self.log_splitter.setSizes(self._saved_log_splitter_sizes())
+        self.log_splitter.splitterMoved.connect(self.remember_log_splitter_sizes)
+
         root = QWidget()
         layout = QVBoxLayout(root)
-        layout.addWidget(tabs)
-        layout.addWidget(QLabel("运行日志"))
-        layout.addWidget(self.log_view)
+        configure_page_layout(layout)
+        layout.addWidget(self.log_splitter)
         self.setCentralWidget(root)
 
+    @staticmethod
+    def _setting_as_bool(value: object) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "no", "off"}
+        return bool(value)
+
+    def _saved_log_splitter_sizes(self) -> list[int]:
+        value = self.settings.value("ui/log_splitter_sizes")
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            try:
+                sizes = [int(value[0]), int(value[1])]
+            except (TypeError, ValueError):
+                pass
+            else:
+                if all(size > 0 for size in sizes):
+                    return sizes
+        return list(self.DEFAULT_LOG_SPLITTER_SIZES)
+
+    def remember_log_auto_scroll(self, checked: bool) -> None:
+        self.settings.setValue("ui/log_auto_scroll", checked)
+
+    def remember_log_splitter_sizes(self, _position: int, _index: int) -> None:
+        if not self.log_expanded:
+            self.settings.setValue("ui/log_splitter_sizes", self.log_splitter.sizes())
+
+    def copy_all_logs(self) -> None:
+        QApplication.clipboard().setText(self.log_view.toPlainText())
+
+    def save_logs(self) -> None:
+        default_name = "DailyClockXDU-{0}.log".format(datetime.now().strftime("%Y%m%d-%H%M%S"))
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存运行日志",
+            str(Path.home() / default_name),
+            "日志文件 (*.log);;文本文件 (*.txt)",
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "保存日志失败", str(exc))
+
+    def clear_logs(self) -> None:
+        if not self.log_view.toPlainText():
+            return
+        answer = QMessageBox.question(
+            self,
+            "清空运行日志",
+            "确定清空当前显示的全部运行日志吗？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self.log_view.clear()
+        self.log_line_count = 0
+        self.log_count_label.setText("运行日志（0 条）")
+
+    def toggle_log_expansion(self) -> None:
+        sizes = self.log_splitter.sizes()
+        total = max(sum(sizes), self.log_splitter.height(), 1)
+        if not self.log_expanded:
+            self.log_restore_sizes = sizes if all(size > 0 for size in sizes) else None
+            self.tabs.setMinimumHeight(self.EXPANDED_TABS_MINIMUM_HEIGHT)
+            self.log_expanded = True
+            self.log_splitter.setSizes([int(total * 0.35), int(total * 0.65)])
+            self.expand_log_button.setText("恢复布局")
+            return
+
+        self.tabs.setMinimumHeight(self.NORMAL_TABS_MINIMUM_HEIGHT)
+        self.log_splitter.setSizes(
+            self.log_restore_sizes or self._saved_log_splitter_sizes()
+        )
+        self.log_restore_sizes = None
+        self.log_expanded = False
+        self.expand_log_button.setText("展开日志")
+
     def log_line(self, message: str) -> None:
-        self.log_view.append(message)
+        scroll_bar = self.log_view.verticalScrollBar()
+        previous_scroll = scroll_bar.value()
+        lines = str(message).splitlines() or [""]
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        cursor = self.log_view.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        for line in lines:
+            if not self.log_view.document().isEmpty():
+                cursor.insertBlock()
+            cursor.insertText("[{0}] {1}".format(timestamp, line))
+            self.log_line_count += 1
+        self.log_view.setTextCursor(cursor)
+        self.log_count_label.setText("运行日志（{0} 条）".format(self.log_line_count))
+        if self.log_auto_scroll.isChecked():
+            scroll_bar.setValue(scroll_bar.maximum())
+        else:
+            scroll_bar.setValue(min(previous_scroll, scroll_bar.maximum()))
 
 
 def main() -> int:

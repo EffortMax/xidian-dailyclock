@@ -3,7 +3,7 @@
 import os
 
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 
 # 通过服务层导入旧协议模块时，不读取项目根目录的明文 config.py。

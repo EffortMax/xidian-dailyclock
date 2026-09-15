@@ -40,7 +40,7 @@ jobs:
       - name: Run packaged OCR and DPAPI self-test
         shell: pwsh
         run: |
-          $exe = Resolve-Path "release/XDU-Course-Assistant-v0.3.1-windows-x64.exe"
+          $exe = Resolve-Path "release/XDU-Course-Assistant-v0.3.2-windows-x64.exe"
           $env:XDU_SELF_TEST_REPORT = Join-Path $PWD "release/packaged-self-test.log"
           $process = Start-Process -FilePath $exe -ArgumentList "--self-test" -PassThru -Wait
           if ($process.ExitCode -ne 0) {
@@ -53,7 +53,7 @@ jobs:
       - name: Run child-aware packaged GUI smoke test
         shell: pwsh
         run: |
-          $exe = Resolve-Path "release/XDU-Course-Assistant-v0.3.1-windows-x64.exe"
+          $exe = Resolve-Path "release/XDU-Course-Assistant-v0.3.2-windows-x64.exe"
           $parent = Start-Process -FilePath $exe -PassThru
           try {
             Start-Sleep -Seconds 10
@@ -70,15 +70,15 @@ jobs:
             } | Stop-Process -Force
           }
 
-      - name: Publish v0.3.1
+      - name: Publish v0.3.2
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.1
+          tag_name: v0.3.2
           target_commitish: ${{ github.sha }}
-          name: XDU Course Assistant v0.3.1
-          body_path: packaging/github-release-v0.3.1.md
+          name: XDU Course Assistant v0.3.2
+          body_path: packaging/github-release-v0.3.2.md
           make_latest: true
           fail_on_unmatched_files: true
           files: |
-            release/XDU-Course-Assistant-v0.3.1-windows-x64.exe
-            release/XDU-Course-Assistant-v0.3.1-windows-x64.exe.sha256
+            release/XDU-Course-Assistant-v0.3.2-windows-x64.exe
+            release/XDU-Course-Assistant-v0.3.2-windows-x64.exe.sha256
