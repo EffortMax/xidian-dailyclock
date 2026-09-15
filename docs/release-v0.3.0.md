@@ -15,7 +15,7 @@
 
 | 文件 | 大小 | SHA-256 |
 |---|---:|---|
-| `XDU-Course-Assistant-v0.3.0-windows-x64.exe` | 198,955,776 字节 | `d23a3887dcec1305ad0845d7480e9b079d38d7545151a2014a9441f3e91ecde0` |
+| `XDU-Course-Assistant-v0.3.0-windows-x64.exe` | 201,531,686 字节 | `df38153c16b0d836275e83f78af2726df2a737c36b4c13a0ad093ca7aeb3eea8` |
 | `XDU-Course-Assistant-v0.3.0-windows-x64.exe.sha256` | 校验文件 | 与上值一致 |
 
 ```powershell
@@ -41,6 +41,7 @@ Get-FileHash .\XDU-Course-Assistant-v0.3.0-windows-x64.exe -Algorithm SHA256
 | EXE 文件版本 | 0.3.0 |
 | EXE `--self-test` | OCR 模型、ONNX Runtime、DPAPI 全部通过，退出码 0 |
 | EXE GUI 冒烟 | 窗口成功启动并显示版本 0.3.0 |
+| GitHub Actions 发布 | [运行 34942490821](https://github.com/EffortMax/xidian-dailyclock/actions/runs/34942490821) 成功 |
 
 用户此前已确认真实登录、课程选择和课表导出通过。本次发布没有为了测试而退掉真实课程；退课协议使用接口 mock、精确 BJDM 断言、服务器拒绝分支、最终移除复核和双确认 UI 测试覆盖。
 
