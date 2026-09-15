@@ -42,7 +42,7 @@ $LASTEXITCODE  # 0 表示 OCR 模型、ONNX Runtime 与 Windows DPAPI 均通过
 推荐使用项目虚拟环境，并确保安装与运行使用同一个 Python 解释器：
 
 ```powershell
-$py = "D:\newproject\.venv\Scripts\python.exe"
+$py = "D:\xxx\.venv\Scripts\python.exe" (找到自己python的解释器路径)
 & $py -m pip install -r requirements.txt
 & $py run_app.py
 ```
