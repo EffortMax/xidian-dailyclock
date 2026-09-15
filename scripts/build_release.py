@@ -45,6 +45,11 @@ def main() -> int:
     source = ROOT / "dist" / EXECUTABLE_NAME
     if not source.is_file():
         raise FileNotFoundError("PyInstaller 未生成预期文件：{0}".format(source))
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "audit_release_archive.py"), str(source)],
+        cwd=ROOT,
+        check=True,
+    )
     release_dir = ROOT / "release"
     release_dir.mkdir(parents=True, exist_ok=True)
     artifact = release_dir / RELEASE_NAME

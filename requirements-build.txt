@@ -1,2 +1,17 @@
--r requirements.txt
+# 干净发布环境的最小、可复现依赖。ddddocr 由
+# scripts/install_build_dependencies.py 使用 --no-deps 安装，避免把仅用于
+# ddddocr 元数据声明、但本项目分类链路不使用的 opencv-python 安装进构建环境。
+requests==2.34.0
+certifi==2026.4.22
+charset-normalizer==3.4.7
+idna==3.14
+urllib3==2.7.0
+PySide6-Essentials==6.11.2
+numpy==2.4.4
+onnxruntime==1.30.0
+Pillow==12.2.0
+flatbuffers==25.12.19
+packaging==26.2
+protobuf==5.29.6
 pyinstaller==6.16.0
+pyinstaller-hooks-contrib==2026.7

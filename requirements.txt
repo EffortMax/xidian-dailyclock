@@ -1,8 +1,8 @@
 # 核心接口依赖
-requests>=2.28
+requests==2.34.0
 
 # 桌面应用
-PySide6>=6.7
+PySide6-Essentials==6.11.2
 
 # 无人值守验证码识别；关闭无人值守时可以不安装
-ddddocr>=1.5.5
+ddddocr==1.6.1

@@ -1,8 +1,19 @@
-# Windows EXE 体积与依赖审计（Review 草案）
+# Windows EXE 体积与依赖审计
 
 审计日期：2026-09-15
-审计对象：本地 v0.3.0 单文件构建（`198,955,776` 字节，约 `189.74 MiB`）
-状态：**仅形成候选清单，尚未修改 requirements、PyInstaller spec 或发布物。**
+基线对象：本地 v0.3.0 单文件构建（`198,955,776` 字节，`189.74 MiB`）
+实施对象：本地 v0.3.1 干净环境构建（`65,521,203` 字节，`62.49 MiB`）
+状态：**已按 Review 结论实施并完成本地源码、归档和打包后验证；v0.3.0 发布物未被覆盖。**
+
+## 0. v0.3.1 实施结果
+
+- 减少 `133,434,573` 字节（`127.25 MiB`），相对基线缩小 `67.07%`。
+- 本地验证产物 SHA-256：`24fbe5fe9621f5a182ad8a0281f650d772b74ce40b6fab592fe9ee2f78fa4453c`。
+- 专用 Python 3.13 环境 `D:\newproject\.venv-xdu-031` 仅按 `requirements-build.txt` 和 `scripts/install_build_dependencies.py` 安装；`cv2` 确认不存在，ddddocr 1.6.1 通过 `--no-deps` 固定安装。
+- 归档审计覆盖 80 个顶层 CArchive 成员及 470 个 PYZ 模块，确认没有禁用成员。
+- 保留：`common_old.onnx`、ONNX Runtime、Pillow `_imaging`、Qt Core/Gui/Widgets、`qwindows.dll`、`qjpeg.dll`、`qmodernwindowsstyle.dll`、`opengl32sw.dll`，以及标准库 HTTPS 使用的 `_ssl.pyd`、`libssl-3.dll`、`libcrypto-3.dll`。
+- 排除：`common.onnx`、`common_det.onnx`、OpenCV、cryptography/cffi/PyOpenSSL、Pillow AVIF/WebP/CMS/ImageMath/Tk 扩展、Qt Network/OpenGL/PDF/QML/Quick/SVG/VirtualKeyboard、翻译及非必要插件。
+- 验证通过：编译、25 项单元/UI 测试、无 OpenCV 的内置 JPEG OCR `1234`、Windows DPAPI、实时学校 HTTPS 登录页/验证码 token/验证码 JPEG 与 OCR、打包后 OCR/DPAPI、自检失败报告、PE 版本 `0.3.1`、子进程感知 GUI 启动、归档审计及 SHA-256 校验。
 
 ## 1. 审计方法与结论边界
 
@@ -41,7 +52,7 @@
 | --- | ---: | --- | --- |
 | `ddddocr/common.onnx` | `47.97 MiB` | 只有 `beta=True` 才会选择；项目从未传入该参数 | spec 仅收集 `common_old.onnx`。必须固定 ddddocr 版本，并增加真实图片 `classification()` 自检，防止上游默认逻辑变化 |
 | `ddddocr/common_det.onnx` | `17.81 MiB` | 仅目标检测 `det=True` 使用；项目只做验证码分类 | 从 datas 排除；保留自动化 OCR 分类测试 |
-| `opencv-python` / `cv2` | `36.61 MiB` | 维护中源码没有导入；ddddocr 1.6.1 只在 `utils.exceptions.safe_import_opencv()` 的诊断辅助函数中延迟导入，当前 OCR 分类链路不调用 | 在 PyInstaller bundle 中排除 `cv2`。注意 ddddocr 的 Windows metadata 仍把 `opencv-python` 声明为硬依赖，不能仅在普通源码环境中直接卸载后就宣称受支持 |
+| `opencv-python` / `cv2` | `36.61 MiB` | 项目只调用 Pillow/NumPy/ONNX 分类链路；ddddocr 1.6.1 的预处理、检测模块虽未被调用，却会在包导入时提前探测 `cv2` | 在 PyInstaller bundle 中排除 `cv2`，并在导入 ddddocr 前安装只允许导入、访问任意 OpenCV API 即报错的兼容 stub；真实 JPEG `classification()` 自检负责证明受支持链路。注意 ddddocr 的 Windows metadata 仍把 `opencv-python` 声明为硬依赖 |
 | Pillow 非 JPEG 插件：`_avif`、`_webp`、`_imagingcms`、`_imagingmath`、`_imagingtk` | 约 `4.46 MiB` | 项目只将学校返回的 JPEG 验证码交给 PIL/Qt；不处理 AVIF、WebP、ICC、ImageMath 或 Tk | bundle 中排除这些扩展，保留 Pillow `_imaging`；用真实 JPEG 验证码做打包后 OCR 测试 |
 | `cryptography`、`cffi`、`libcrypto-3-x64.dll`、`libssl-3-x64.dll` 及其 runtime hook | 约 `5.98 MiB` | 由 `requests`/`urllib3.contrib.pyopenssl` 的可选分支被静态分析带入；项目 HTTPS 走 Python 标准库 `ssl`，密码提交使用纯 Python 站点算法，凭据加密使用 Windows DPAPI/ctypes | 排除 optional PyOpenSSL 链路，并实测所有 HTTPS 接口。不能删除 Python `_ssl` 使用的 `libssl-3.dll`、`libcrypto-3.dll` |
 
@@ -84,14 +95,12 @@
 
 **不要在共享 `D:\newproject\.venv` 中批量卸载上述包。** 推荐为本项目建立全新的专用构建环境，从 `requirements-build.txt` 安装后再做 spec 排除；这既能避免影响其它项目，也能证明构建不依赖环境偶然状态。未进入当前归档的环境污染包本身不会降低现有 EXE 体积，清理它们的主要价值是可重复构建和审计清晰度。
 
-## 5. Review 后建议的实施顺序
+## 5. 已完成的实施顺序
 
-1. 建立全新专用 Windows 构建虚拟环境，记录完整 `pip freeze`。
-2. 固定 ddddocr 版本；将 self-test 从“模型可初始化”增强为“内置 JPEG 样本可完成 classification”。
-3. spec 只收集 `common_old.onnx`，排除另外两个模型和 cv2，先完成第一版对比构建。
-4. 排除 Pillow 非 JPEG 插件及 optional cryptography/PyOpenSSL 链路，验证真实 HTTPS 登录与验证码 OCR。
-5. 将 PySide6 元包评估为 Essentials，并逐项缩减 Qt Addons 和插件。
-6. 每一步记录 EXE 大小、归档清单和 SHA-256；运行 24 项测试、打包 self-test、GUI 子进程启动、两次确认 UI、CSV 导出和受控真实登录。
-7. `opengl32sw.dll` 单独作为兼容性实验，不与第一批高置信度删除合并。
-
-完成 Review 前不应覆盖现有 v0.3.0 Release；优化版本建议使用新的版本号和独立 GitHub Actions 构建记录。
+1. 建立全新专用 Windows 构建虚拟环境并固定运行/构建依赖。
+2. 将 self-test 从“模型可初始化”增强为内置 JPEG 的真实 `classification()`，并让 windowed EXE 在失败时输出诊断报告。
+3. spec 仅收集 `common_old.onnx`，排除另外两个模型；用 fail-closed cv2 兼容层支持分类链路而不打包 OpenCV。
+4. 排除 Pillow 非 JPEG 扩展和 optional cryptography/PyOpenSSL 链路，同时保留并审计标准库 SSL。
+5. 改用 `PySide6_Essentials`，逐项缩减 Qt Addons、插件及翻译；首轮按 Review 决定保留 `opengl32sw.dll`。
+6. 在源码与打包后完成 OCR、DPAPI、HTTPS、25 项测试、GUI 子进程、归档及校验和验证。
+7. 使用独立 v0.3.1 版本和 GitHub Actions 发布，不覆盖 v0.3.0。

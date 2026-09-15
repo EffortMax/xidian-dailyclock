@@ -26,20 +26,22 @@
 
 从 GitHub [Releases](https://github.com/EffortMax/xidian-dailyclock/releases) 下载：
 
-- `XDU-Course-Assistant-v0.3.0-windows-x64.exe`
+- `XDU-Course-Assistant-v0.3.1-windows-x64.exe`
 - 同名 `.sha256` 校验文件
 
 EXE 是包含 PySide6、ddddocr、ONNX 模型与运行时的 Windows x64 单文件版本，不需要预装 Python。单文件程序首次启动需要解压依赖，可能等待数秒；Windows SmartScreen 若提示未知发布者，请先核对下载来源和 SHA-256。
 
+v0.3.1 的本地干净构建为 `62.49 MiB`，相对 v0.3.0 的 `189.74 MiB` 减少 `67.07%`；只保留 OCR 分类所需模型与 Qt Widgets 运行链路，详细依据和归档清单见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)。
+
 ```powershell
-Get-FileHash .\XDU-Course-Assistant-v0.3.0-windows-x64.exe -Algorithm SHA256
-.\XDU-Course-Assistant-v0.3.0-windows-x64.exe
+Get-FileHash .\XDU-Course-Assistant-v0.3.1-windows-x64.exe -Algorithm SHA256
+.\XDU-Course-Assistant-v0.3.1-windows-x64.exe
 ```
 
 发布包还提供无网络、无选课副作用的依赖自检：
 
 ```powershell
-.\XDU-Course-Assistant-v0.3.0-windows-x64.exe --self-test
+.\XDU-Course-Assistant-v0.3.1-windows-x64.exe --self-test
 $LASTEXITCODE  # 0 表示 OCR 模型、ONNX Runtime 与 Windows DPAPI 均通过
 ```
 
@@ -133,18 +135,18 @@ $env:QT_QPA_PLATFORM = "offscreen"
 python -m unittest discover -s tests -v
 ```
 
-当前版本 24 项测试覆盖模型校验、DPAPI 凭据文件、精确 BJDM 退课及最终复核、桌面两次确认、单/多目标选课编排、每轮课程列表复用、筛选放宽策略、日志轮转、课表导出和 UI 冒烟。
+当前版本 25 项测试覆盖模型校验、DPAPI 凭据文件、OpenCV 缺失兼容层、精确 BJDM 退课及最终复核、桌面两次确认、单/多目标选课编排、每轮课程列表复用、筛选放宽策略、日志轮转、课表导出和 UI 冒烟。
 
 复现 Windows 发布包：
 
 ```powershell
-python -m pip install -r requirements-build.txt
+python scripts\install_build_dependencies.py
 python scripts\build_release.py
 ```
 
-产物和校验文件写入 `release\`。正式 v0.3.0 的构建与验证明细见 [`docs/release-v0.3.0.md`](docs/release-v0.3.0.md)。
+产物和校验文件写入 `release\`。v0.3.0 的初版构建记录见 [`docs/release-v0.3.0.md`](docs/release-v0.3.0.md)，v0.3.1 的优化构建与归档验证见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)。
 
-EXE 中可裁剪的模型、OpenCV、Pillow、Qt 插件和环境污染包清单见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)；该清单处于 Review 阶段，尚未应用到发布配置。
+EXE 的模型、OpenCV、Pillow、Qt 与环境污染项审计见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)；Review 通过的第一轮裁剪已应用到 v0.3.1 发布配置。
 
 ## 代码结构
 

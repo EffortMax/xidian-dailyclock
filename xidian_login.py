@@ -245,6 +245,9 @@ def make_ddddocr_provider(verbose=True):
     用 ddddocr 做无人值守验证码识别，返回回调 (image_bytes, attempt) -> 验证码字符串。
     没装 ddddocr 时返回 None（调用方回退到人工输入）。
     """
+    from app.services.ocr_compat import ensure_opencv_module
+
+    ensure_opencv_module()
     try:
         import ddddocr
     except ImportError:
