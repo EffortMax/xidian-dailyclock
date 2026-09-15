@@ -31,7 +31,7 @@
 
 EXE 是包含 PySide6、ddddocr、ONNX 模型与运行时的 Windows x64 单文件版本，不需要预装 Python。单文件程序首次启动需要解压依赖，可能等待数秒；Windows SmartScreen 若提示未知发布者，请先核对下载来源和 SHA-256。
 
-v0.3.1 的本地干净构建为 `62.49 MiB`，相对 v0.3.0 的 `189.74 MiB` 减少 `67.07%`；只保留 OCR 分类所需模型与 Qt Widgets 运行链路，详细依据和归档清单见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)。
+v0.3.1 的 GitHub Actions 发布附件为 `63.54 MiB`，相对 v0.3.0 的 `189.74 MiB` 减少 `66.51%`；只保留 OCR 分类所需模型与 Qt Widgets 运行链路，详细依据和归档清单见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)。
 
 ```powershell
 Get-FileHash .\XDU-Course-Assistant-v0.3.1-windows-x64.exe -Algorithm SHA256

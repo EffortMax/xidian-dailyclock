@@ -3,12 +3,14 @@
 审计日期：2026-09-15
 基线对象：本地 v0.3.0 单文件构建（`198,955,776` 字节，`189.74 MiB`）
 实施对象：本地 v0.3.1 干净环境构建（`65,521,203` 字节，`62.49 MiB`）
-状态：**已按 Review 结论实施并完成本地源码、归档和打包后验证；v0.3.0 发布物未被覆盖。**
+状态：**已按 Review 结论实施，通过本地和 GitHub Actions 独立验证并发布 v0.3.1；v0.3.0 发布物未被覆盖。**
 
 ## 0. v0.3.1 实施结果
 
 - 减少 `133,434,573` 字节（`127.25 MiB`），相对基线缩小 `67.07%`。
 - 本地验证产物 SHA-256：`24fbe5fe9621f5a182ad8a0281f650d772b74ce40b6fab592fe9ee2f78fa4453c`。
+- GitHub Actions 发布附件为 `66,621,741` 字节（`63.54 MiB`），相对基线减少 `132,334,035` 字节（`126.20 MiB`，`66.51%`）；SHA-256 为 `858cd08a58d55ad5bd2c66b569431a3bb0cfede665f0425ce640774f4f53e0d7`。
+- 发布工作流 [34949041791](https://github.com/EffortMax/xidian-dailyclock/actions/runs/34949041791) 在提交 `a2c360ca52d90446d3c69941e3da92d3e522214a` 上成功；Release 与轻量 tag `v0.3.1` 均指向该提交。
 - 专用 Python 3.13 环境 `D:\newproject\.venv-xdu-031` 仅按 `requirements-build.txt` 和 `scripts/install_build_dependencies.py` 安装；`cv2` 确认不存在，ddddocr 1.6.1 通过 `--no-deps` 固定安装。
 - 归档审计覆盖 80 个顶层 CArchive 成员及 470 个 PYZ 模块，确认没有禁用成员。
 - 保留：`common_old.onnx`、ONNX Runtime、Pillow `_imaging`、Qt Core/Gui/Widgets、`qwindows.dll`、`qjpeg.dll`、`qmodernwindowsstyle.dll`、`opengl32sw.dll`，以及标准库 HTTPS 使用的 `_ssl.pyd`、`libssl-3.dll`、`libcrypto-3.dll`。
