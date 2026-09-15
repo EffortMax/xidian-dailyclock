@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
+ON_EMPTY_POLICIES = ("warn", "ignore_filter", "abort")
+
+
 @dataclass(frozen=True)
 class SelectionTarget:
     """一次自动选课任务的明确目标。"""
@@ -13,12 +16,17 @@ class SelectionTarget:
     bjmc_keyword: str = ""
     xqmc_keyword: str = ""
     poll_interval: float = 15.0
+    on_empty: str = "warn"
 
     def validate(self) -> None:
         if not self.kcdm.strip():
             raise ValueError("课程代码不能为空")
         if self.poll_interval < 1:
             raise ValueError("轮询间隔不能小于 1 秒")
+        if self.on_empty not in ON_EMPTY_POLICIES:
+            raise ValueError(
+                "未找到课程时的策略必须是：{0}".format(" / ".join(ON_EMPTY_POLICIES))
+            )
 
 
 @dataclass(frozen=True)

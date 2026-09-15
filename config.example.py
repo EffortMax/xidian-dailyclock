@@ -11,4 +11,6 @@ sleep_time = 30
 poll_interval = 1
 unattended = False
 log_file = "courseChoose.log"
+log_max_bytes = 1_000_000
+log_backup_count = 5
 

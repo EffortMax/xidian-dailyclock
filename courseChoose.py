@@ -81,6 +81,9 @@ try:
 except ImportError:
     LOG_FILE = "courseChoose.log"
 
+LOG_MAX_BYTES = 1_000_000
+LOG_BACKUP_COUNT = 5
+
 BASE = xl.APP            # https://yjsxk.xidian.edu.cn/yjsxkapp/sys/xsxkapp
 TIMEOUT = xl.TIMEOUT     # (连接超时, 读取超时)
 
@@ -89,6 +92,7 @@ def load_cli_config():
     """仅在命令行入口加载 config.py，库导入时不读取明文凭据。"""
     global password, user_id, course_KCDM, sleep_time
     global BJMC_KEYWORD, XQMC_KEYWORD, POLL_INTERVAL, UNATTENDED, LOG_FILE
+    global LOG_MAX_BYTES, LOG_BACKUP_COUNT
     try:
         import config
     except ImportError as exc:
@@ -102,6 +106,8 @@ def load_cli_config():
     POLL_INTERVAL = getattr(config, "poll_interval", 1.0)
     UNATTENDED = getattr(config, "unattended", False)
     LOG_FILE = getattr(config, "log_file", "courseChoose.log")
+    LOG_MAX_BYTES = max(0, int(getattr(config, "log_max_bytes", 1_000_000)))
+    LOG_BACKUP_COUNT = max(0, int(getattr(config, "log_backup_count", 5)))
 
 
 class TeeLogger(object):
@@ -110,11 +116,54 @@ class TeeLogger(object):
     跑一晚上之后能直接回看什么时候会话过期、什么时候重登、有没有抢到。
     """
 
-    def __init__(self, path, stream):
+    def __init__(self, path, stream, max_bytes=1_000_000, backup_count=5):
         self.stream = stream
-        self.path = path
-        self.fh = open(path, "a", encoding="utf-8")
+        self.path = os.path.abspath(path)
+        self.max_bytes = max(0, int(max_bytes or 0))
+        self.backup_count = max(0, int(backup_count or 0))
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self._rotate_existing_if_needed()
+        self.fh = open(self.path, "a", encoding="utf-8")
         self.at_line_start = True
+
+    def _rotate_existing_if_needed(self):
+        if not self.max_bytes or not os.path.exists(self.path):
+            return
+        try:
+            if os.path.getsize(self.path) < self.max_bytes:
+                return
+            if not self.backup_count:
+                with open(self.path, "w", encoding="utf-8"):
+                    return
+            for index in range(self.backup_count - 1, 0, -1):
+                source = "{0}.{1}".format(self.path, index)
+                destination = "{0}.{1}".format(self.path, index + 1)
+                if os.path.exists(source):
+                    os.replace(source, destination)
+            os.replace(self.path, self.path + ".1")
+        except OSError as exc:
+            try:
+                self.stream.write("[!] 日志轮转失败，将继续追加原文件：{0}\n".format(exc))
+            except Exception:
+                pass
+
+    def _rotate_during_run_if_needed(self):
+        if not self.max_bytes or self.fh.closed:
+            return
+        try:
+            self.fh.flush()
+            if os.path.getsize(self.path) < self.max_bytes:
+                return
+            self.fh.close()
+            self._rotate_existing_if_needed()
+            self.fh = open(self.path, "a", encoding="utf-8")
+        except OSError as exc:
+            try:
+                self.stream.write("[!] 运行中日志轮转失败：{0}\n".format(exc))
+            except Exception:
+                pass
+            if self.fh.closed:
+                self.fh = open(self.path, "a", encoding="utf-8")
 
     def write(self, data):
         try:
@@ -123,6 +172,7 @@ class TeeLogger(object):
             pass
         if not data or self.fh.closed:
             return
+        self._rotate_during_run_if_needed()
         for chunk in data.splitlines(True):
             if self.at_line_start and chunk.strip():
                 self.fh.write(time.strftime("[%m-%d %H:%M:%S] "))
@@ -784,7 +834,12 @@ if __name__ == '__main__':
         if log_path:
             if not os.path.isabs(log_path):      # 相对路径按脚本所在目录算，别受当前工作目录影响
                 log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), log_path)
-            logger = TeeLogger(log_path, sys.stdout)
+            logger = TeeLogger(
+                log_path,
+                sys.stdout,
+                max_bytes=LOG_MAX_BYTES,
+                backup_count=LOG_BACKUP_COUNT,
+            )
             sys.stdout = logger
             print("[*] 已开启日志：{0}".format(log_path))
         if unattended:

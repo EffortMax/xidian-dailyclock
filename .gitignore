@@ -4,6 +4,7 @@ cookies.json
 captcha.jpg
 course.csv
 app_state/
+/tools/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -39,6 +40,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!packaging/*.spec
+release/
 
 # Installer logs
 pip-log.txt

@@ -12,6 +12,10 @@ class AppModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SelectionTarget("X1TEST", poll_interval=0).validate()
 
+    def test_target_rejects_unknown_empty_policy(self):
+        with self.assertRaises(ValueError):
+            SelectionTarget("X1TEST", on_empty="guess").validate()
+
     def test_course_class_detects_free_seat(self):
         course = CourseClass.from_record(
             {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Callable
+from typing import Callable, Sequence
 
 import requests
 
@@ -40,6 +40,34 @@ class CourseService:
 
     def chosen_courses(self) -> list[dict]:
         return chooser.fetchChosenCourses(self._session())
+
+    def drop_course(self, bjdm: str, verify_tries: int = 5) -> dict:
+        """退掉一个明确的教学班，并复核它已从已选课程中消失。"""
+
+        bjdm = bjdm.strip()
+        if not bjdm:
+            raise ValueError("教学班代码 BJDM 不能为空")
+        chosen = self.chosen_courses()
+        course = next(
+            (entry for entry in chosen if str(entry.get("BJDM") or "").strip() == bjdm),
+            None,
+        )
+        if course is None:
+            raise RuntimeError("已选课程中没有教学班 {0}".format(bjdm))
+
+        csrf_token = self._refresh_csrf()
+        ok, why = chooser.cancelCourse(self._session(), bjdm, csrf_token)
+        if not ok:
+            raise RuntimeError("退课失败：{0}".format(why or "接口未说明原因"))
+
+        for attempt in range(1, max(1, verify_tries) + 1):
+            remaining = self.chosen_courses()
+            if not any(str(entry.get("BJDM") or "").strip() == bjdm for entry in remaining):
+                self.log("退课成功，已确认教学班 {0} 不在已选课程中".format(bjdm))
+                return course
+            if attempt < verify_tries:
+                time.sleep(1)
+        raise RuntimeError("退课接口返回成功，但复核时该教学班仍在已选课程中")
 
     @staticmethod
     def _wait(seconds: float, stop_event: threading.Event | None) -> bool:
@@ -82,88 +110,182 @@ class CourseService:
                 return False, None
         return False, None
 
-    def auto_select(
-        self,
-        target: SelectionTarget,
-        stop_event: threading.Event | None = None,
-    ) -> dict:
-        """自动轮询课程并在最终复核成功后返回已选课程记录。"""
+    @staticmethod
+    def _target_label(target: SelectionTarget) -> str:
+        details = []
+        if target.bjdm.strip():
+            details.append("BJDM={0}".format(target.bjdm.strip()))
+        if target.bjmc_keyword.strip():
+            details.append("教学班含 {0}".format(target.bjmc_keyword.strip()))
+        if target.xqmc_keyword.strip():
+            details.append("校区 {0}".format(target.xqmc_keyword.strip()))
+        suffix = "，" + "，".join(details) if details else ""
+        return "{0}{1}".format(target.kcdm.strip(), suffix)
 
-        target.validate()
+    @staticmethod
+    def _chosen_entry(target: SelectionTarget, chosen: Sequence[dict]) -> dict | None:
+        wanted_bjdm = target.bjdm.strip()
+        wanted_kcdm = target.kcdm.strip().casefold()
+        for entry in chosen:
+            if wanted_bjdm:
+                if str(entry.get("BJDM") or "").strip() == wanted_bjdm:
+                    return entry
+            elif str(entry.get("KCDM") or "").strip().casefold() == wanted_kcdm:
+                return entry
+        return None
+
+    @staticmethod
+    def _filter_for_target(records: list[dict], target: SelectionTarget) -> list[dict]:
+        classes = chooser.filterClasses(
+            records,
+            target.kcdm.strip(),
+            target.bjmc_keyword.strip(),
+            target.xqmc_keyword.strip(),
+        )
+        if target.bjdm.strip():
+            classes = [
+                course for course in classes
+                if str(course.get("BJDM") or "").strip() == target.bjdm.strip()
+            ]
+        return classes
+
+    def auto_select_many(
+        self,
+        targets: Sequence[SelectionTarget],
+        stop_event: threading.Event | None = None,
+    ) -> list[dict]:
+        """轮询多个目标；每轮只拉一次课程列表，并使用每个目标自己的筛选条件。"""
+
+        target_list = list(targets)
+        if not target_list:
+            raise ValueError("至少需要一个抢课目标")
+        seen_codes: set[str] = set()
+        for target in target_list:
+            target.validate()
+            code = target.kcdm.strip().casefold()
+            if code in seen_codes:
+                raise ValueError(
+                    "多目标队列不能重复课程代码 {0}；请在同一个目标中设置教学班或校区筛选".format(
+                        target.kcdm.strip()
+                    )
+                )
+            seen_codes.add(code)
+
         session = self._session()
         csrf_token = self._refresh_csrf()
-        last_bjdm = ""
-        completed = False
+        pending = {index: target for index, target in enumerate(target_list)}
+        selected: dict[int, dict] = {}
+        last_states: dict[int, str] = {}
 
-        self.log(
-            "开始自动抢课：{0}，校区={1}，教学班={2}，间隔={3}s".format(
-                target.kcdm,
-                target.xqmc_keyword or "不限",
-                target.bjmc_keyword or "不限",
-                target.poll_interval,
-            )
-        )
+        self.log("开始多目标自动抢课，共 {0} 个目标".format(len(target_list)))
+        for index, target in pending.items():
+            self.log("  {0}. {1}（空结果策略：{2}）".format(
+                index + 1, self._target_label(target), target.on_empty
+            ))
 
-        while stop_event is None or not stop_event.is_set():
+        def log_state(index: int, state: str, message: str) -> None:
+            if last_states.get(index) != state:
+                last_states[index] = state
+                self.log(message)
+
+        while pending and (stop_event is None or not stop_event.is_set()):
             started = time.monotonic()
             try:
                 records = chooser.queryCourseList(
                     session,
                     retries=3,
-                    pause=min(target.poll_interval, 5),
+                    pause=min(min(t.poll_interval for t in pending.values()), 5),
                 )
-                classes = chooser.filterClasses(
-                    records,
-                    target.kcdm,
-                    target.bjmc_keyword,
-                    target.xqmc_keyword,
-                )
-                if target.bjdm.strip():
-                    classes = [
-                        course for course in classes
-                        if str(course.get("BJDM") or "") == target.bjdm.strip()
-                    ]
-                if not classes:
-                    chosen = self.chosen_courses()
-                    already = [c for c in chosen if c.get("KCDM") == target.kcdm]
-                    if already:
-                        self.log("目标课程已在已选课程中，任务完成")
-                        completed = True
-                        return already[0]
-                    self.log("暂未找到符合条件的教学班")
-                else:
+                chosen_cache: list[dict] | None = None
+
+                for index, target in list(pending.items()):
+                    if stop_event is not None and stop_event.is_set():
+                        break
+
+                    label = self._target_label(target)
+                    classes = self._filter_for_target(records, target)
+                    relaxed = False
+                    if (
+                        not classes
+                        and target.on_empty == "ignore_filter"
+                        and not target.bjdm.strip()
+                    ):
+                        classes = chooser.filterClasses(records, target.kcdm.strip())
+                        relaxed = bool(classes)
+                        if relaxed:
+                            log_state(
+                                index,
+                                "relaxed",
+                                "[{0}] 严格筛选无结果，已按策略放宽教学班/校区条件".format(label),
+                            )
+
+                    if not classes:
+                        if chosen_cache is None:
+                            chosen_cache = self.chosen_courses()
+                        already = self._chosen_entry(target, chosen_cache)
+                        if already is not None:
+                            selected[index] = already
+                            del pending[index]
+                            self.log("[{0}] 已在已选课程中，标记为完成".format(label))
+                            continue
+                        if target.on_empty == "abort":
+                            raise RuntimeError(
+                                "目标 {0} 没有符合筛选条件的教学班，已按 abort 策略停止".format(label)
+                            )
+                        locked_hint = "；已锁定 BJDM，不会自动放宽" if target.bjdm.strip() else ""
+                        log_state(
+                            index,
+                            "empty",
+                            "[{0}] 暂未找到符合条件的教学班{1}".format(label, locked_hint),
+                        )
+                        continue
+
                     course = chooser.pickClass(classes)
-                    if course and course.get("BJDM") != last_bjdm:
-                        last_bjdm = course.get("BJDM") or ""
-                        self.log(
-                            "当前教学班：{0}，容量 {1}/{2}，{3}".format(
-                                course.get("BJMC") or target.kcdm,
-                                course.get("DQRS") or "?",
-                                course.get("KXRS") or "?",
-                                "有空位" if chooser.hasFreeSeat(course) else "已满",
-                            )
-                        )
-                    if course and chooser.hasFreeSeat(course):
-                        ok, why = chooser.chooseCourse(
-                            session,
-                            course["BJDM"],
-                            csrf_token,
-                            lx=course.get("_lx", "0"),
-                        )
-                        if ok:
-                            self.log("请求已受理，正在复核最终结果：{0}".format(why))
-                            verified, entry = self._verify_chosen(
-                                course["BJDM"], stop_event
-                            )
-                            if verified:
-                                self.log("选课成功，已在已选课程中确认")
-                                completed = True
-                                return entry or course
-                            self.log("接口表示成功，但暂未在已选课程中看到该教学班")
-                        else:
-                            self.log("本次选课未成功：{0}".format(why))
-                    else:
-                        self.log("当前教学班已满，等待下一轮")
+                    if not course:
+                        log_state(index, "empty", "[{0}] 暂无可用教学班".format(label))
+                        continue
+
+                    bjdm = str(course.get("BJDM") or "")
+                    state = "{0}:{1}/{2}:{3}".format(
+                        bjdm,
+                        course.get("DQRS") or "?",
+                        course.get("KXRS") or "?",
+                        "free" if chooser.hasFreeSeat(course) else "full",
+                    )
+                    note = "（已放宽筛选）" if relaxed else ""
+                    log_state(
+                        index,
+                        state,
+                        "[{0}] 当前教学班 {1}，容量 {2}/{3}，{4}{5}".format(
+                            label,
+                            course.get("BJMC") or bjdm,
+                            course.get("DQRS") or "?",
+                            course.get("KXRS") or "?",
+                            "有空位" if chooser.hasFreeSeat(course) else "已满",
+                            note,
+                        ),
+                    )
+                    if not chooser.hasFreeSeat(course):
+                        continue
+
+                    ok, why = chooser.chooseCourse(
+                        session,
+                        bjdm,
+                        csrf_token,
+                        lx=course.get("_lx", "0"),
+                    )
+                    if not ok:
+                        self.log("[{0}] 本次选课未成功：{1}".format(label, why))
+                        continue
+
+                    self.log("[{0}] 请求已受理，正在复核最终结果：{1}".format(label, why))
+                    verified, entry = self._verify_chosen(bjdm, stop_event)
+                    if verified:
+                        selected[index] = entry or course
+                        del pending[index]
+                        self.log("[{0}] 选课成功，已在已选课程中确认".format(label))
+                    elif stop_event is None or not stop_event.is_set():
+                        self.log("[{0}] 接口表示成功，但暂未在已选课程中看到该教学班".format(label))
 
             except chooser.SessionExpired as exc:
                 self._recover(str(exc))
@@ -176,10 +298,22 @@ class CourseService:
                 csrf_token = self._refresh_csrf()
             except requests.RequestException as exc:
                 self.log("网络异常：{0}".format(exc))
-            finally:
-                if not completed:
-                    elapsed = time.monotonic() - started
-                    if self._wait(max(0.0, target.poll_interval - elapsed), stop_event):
-                        break
 
-        raise RuntimeError("自动抢课已停止")
+            if pending:
+                elapsed = time.monotonic() - started
+                interval = min(target.poll_interval for target in pending.values())
+                if self._wait(max(0.0, interval - elapsed), stop_event):
+                    break
+
+        if pending:
+            raise RuntimeError("自动抢课已停止")
+        return [selected[index] for index in range(len(target_list))]
+
+    def auto_select(
+        self,
+        target: SelectionTarget,
+        stop_event: threading.Event | None = None,
+    ) -> dict:
+        """兼容单目标调用；实际由多目标引擎执行。"""
+
+        return self.auto_select_many([target], stop_event)[0]

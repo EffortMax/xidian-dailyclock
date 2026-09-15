@@ -1,103 +1,159 @@
-# DailyClock_XDU_version
+# 西电研究生选课助手
 
-本项目，只用测试使用。
-若造成麻烦或者其他问题，概不负责，也请issues联系。
+面向西安电子科技大学研究生选课系统的桌面与命令行客户端。项目已经适配 2026 年现行登录、课程列表、两阶段选课结果轮询、已选课程复核与课表接口。
 
-## 研究生选课桌面应用
+> 本项目仅供个人学习和接口兼容性研究。请遵守学校系统规则，合理设置轮询间隔，并自行承担使用风险。
 
-安装依赖后可以启动集成应用：
+## 功能
 
-```bash
-python -m pip install -r requirements.txt
-python run_app.py
+- PySide6 桌面应用：登录、课程查询、多目标自动选课、课表 CSV 导出。
+- 登录页可选择保存账户和密码；密码使用当前 Windows 用户的 DPAPI 加密，默认不保存。
+- 桌面端可按精确 BJDM 退掉已选课程；提交前必须连续确认两次，提交后还会复核课程已移除。
+- 验证码支持 ddddocr 无人值守识别，也支持桌面弹窗人工输入。
+- 多目标任务每轮只拉取一次课程列表，各目标保留独立的课程代码、教学班、校区和空结果策略。
+- 选课只有在两阶段接口完成且“已选课程”复核成功后才会报告成功。
+- 会话过期、异常页及瞬时网络故障可以自动恢复或重试。
+- 命令行日志按大小自动轮转，默认单文件 1 MB，保留 5 份历史文件。
+- 课表以 UTF-8 BOM CSV 导出，可用于 Excel 或 WakeUp 课程表。
+
+## 直接使用 Windows EXE
+
+从 GitHub [Releases](https://github.com/EffortMax/xidian-dailyclock/releases) 下载：
+
+- `XDU-Course-Assistant-v0.3.0-windows-x64.exe`
+- 同名 `.sha256` 校验文件
+
+EXE 是包含 PySide6、ddddocr、ONNX 模型与运行时的 Windows x64 单文件版本，不需要预装 Python。单文件程序首次启动需要解压依赖，可能等待数秒；Windows SmartScreen 若提示未知发布者，请先核对下载来源和 SHA-256。
+
+```powershell
+Get-FileHash .\XDU-Course-Assistant-v0.3.0-windows-x64.exe -Algorithm SHA256
+.\XDU-Course-Assistant-v0.3.0-windows-x64.exe
 ```
 
-请使用同一个 Python 解释器执行两条命令。若 PySide6 安装在系统 Python、项目虚拟环境未安装，
-请用安装 PySide6 的解释器运行 `run_app.py`，或在项目虚拟环境中重新执行依赖安装。
+发布包还提供无网络、无选课副作用的依赖自检：
 
-应用包含登录、课程查询/自动抢课和课表 CSV 导出三个页面。
+```powershell
+.\XDU-Course-Assistant-v0.3.0-windows-x64.exe --self-test
+$LASTEXITCODE  # 0 表示 OCR 模型、ONNX Runtime 与 Windows DPAPI 均通过
+```
 
-- “无人值守验证码”可以在登录页自行开关；开启后需要安装 `ddddocr`。
-- 自动抢课开始前会要求确认，只有接口轮询完成且在“已选课程”中复核成功才会显示成功。
-- Cookie 保存在系统用户数据目录，不再写入项目目录；密码不会写入文件。
-- 原有 `courseChoose.py`、`courseQuery.py` 和 `xidian_login.py` 命令行入口继续保留。
+## 从源码安装与启动
 
-# Usage
+推荐使用项目虚拟环境，并确保安装与运行使用同一个 Python 解释器：
 
-命令行模式需要先复制配置模板并填写账户信息：
+```powershell
+$py = "D:\newproject\.venv\Scripts\python.exe"
+& $py -m pip install -r requirements.txt
+& $py run_app.py
+```
+
+桌面应用包含三个工作页：
+
+1. **登录**：填写学号和密码；默认启用 OCR。关闭“无人值守”后，验证码会在应用内弹窗显示。需要时可主动勾选 DPAPI 加密保存。
+2. **选课 / 自动抢课**：先查询课程或手工填写筛选条件，再把一个或多个目标加入队列；“查看已选课程”后可选择一行退课。
+3. **课表导出**：选择 CSV 路径，可按学期过滤并决定是否包含无固定排课课程。
+
+### 保存账户和密码
+
+- 该选项默认关闭；只有勾选并成功登录后才写入凭据文件。
+- 账户标识与 DPAPI 密文保存在 `%LOCALAPPDATA%\DailyClockXDU\credentials.json`，不会写入明文密码。
+- 密文绑定当前 Windows 用户，复制到另一账户或另一台电脑后不能解密。
+- 要清除凭据，可取消勾选后成功登录一次，或在应用关闭时手工删除上述文件。
+
+### 桌面退课
+
+1. 点击“查看已选课程”。
+2. 选中要退掉的课程行并点击“退掉选中课程”。
+3. 通过第一次课程信息确认。
+4. 阅读不可逆风险提示并通过第二次确认。
+
+任意一次选择“否”都不会创建后台退课任务。服务层只提交选中行的精确 BJDM；接口返回成功后，会再次读取已选课程并确认该 BJDM 已消失，否则仍按失败报告。
+
+### 多目标空结果策略
+
+每个目标可以单独设置：
+
+- `warn`（警告并继续）：保持筛选条件，后续轮次继续等待。
+- `ignore_filter`（放宽筛选）：严格条件无结果时，只保留课程代码并尝试其它教学班/校区；如果明确锁定了 BJDM，则不会放宽。
+- `abort`（停止）：目标无匹配教学班时立即停止整批任务，适合防止误选。
+
+建议优先通过课程查询结果锁定 BJDM；自动选课开始前应用还会进行一次确认。
+同一课程代码只能加入队列一次；如果要限制教学班或校区，应在该目标自己的筛选条件中设置。
+
+## 命令行模式
+
+复制模板并填写本地配置：
 
 ```powershell
 Copy-Item config.example.py config.py
 ```
 
-`config.py` 只保存在本地，已被 `.gitignore` 排除，不能提交到公开仓库。
+`config.py` 已被 Git 忽略，不得提交或外传。常用命令：
 
-## 打卡
-
-![](https://imgapp.xidian.edu.cn/image/3/c79542c7e343b40237be127b328846f0.jpg)
-
-```bash
-python clock.py
+```powershell
+python courseChoose.py                         # 按 config.py 运行单目标自动选课
+python courseChoose.py --list                  # 查看可选课程
+python courseChoose.py --list 英语 --xq 南校区
+python courseChoose.py --list --chosen         # 查看已选课程
+python courseChoose.py --drop X1TE9015         # 退课，默认需要再次确认
+python courseQuery.py --all                    # 导出课表，包含线上课
+python xidian_login.py --unattended --diagnose # 登录与接口诊断
+python wisedu_des.py                            # 密码加密向量自检
 ```
 
-推荐crontab，定时打卡
-
-```bash
-0 7-21/3 * * * /root/miniconda3/bin/python /root/Tools/life/DailyClock_XDU_version/clock.py >> /root/Tools/life/DailyClock_XDU_version/xidiandailyup_log
-```
-
-```json
-{"e":0,"m":"操作成功","d":{"amstart":"6:00","amend":"12:00","pmstart":"12:01","pmend":"18:00","image":"image/3/c79542c7e343b40237be127b328846f0.jpg","title":"晨午晚检","desc":"温馨提示： 不外出、不聚集、 戴口罩、勤洗手、开窗通风、发热就诊"}}
-```
-
-## 生成课程表
-
-生成的课程表，可以直接导入到 wake up 课程表中
-
-```bash
-python courseQuery.py
-```
-![image](https://user-images.githubusercontent.com/50180586/188258290-95dbf261-a669-44d6-bb04-fbe861d5f22b.png)
-
-课程表导入后
-![image](https://user-images.githubusercontent.com/50180586/188258572-3c0c020a-1067-4b73-b935-115dfcd53335.png)
-
-## 抢课
-
-在选择系统登录后获取复制想要抢课的课程代码即可粘贴到`config.py`
+日志配置位于 `config.py`：
 
 ```python
-course_KCDM = "X1HA0001"     # 需要抢课的课程代码
-sleep_time = 60 			# 刷新的频率60s，可以根据需要更改
+log_file = "courseChoose.log"
+log_max_bytes = 1_000_000
+log_backup_count = 5
 ```
 
-刷新频率可以根据需要设置，建议间隔长一些
+轮转文件依次为 `courseChoose.log.1`、`.2` 等。把 `log_max_bytes` 设为 `0` 可以关闭轮转。
 
-```python
-python courseChoose.py
+## 本地数据与安全
+
+- 桌面应用 Cookie 默认保存在 `%LOCALAPPDATA%\DailyClockXDU\cookies.json`。
+- 只有主动勾选“保存账户和密码”时，桌面应用才创建 `credentials.json`；密码字段是 Windows DPAPI 密文，不是明文。
+- 密码在应用运行期间仍会在内存中保留，以便会话恢复。DPAPI 只能降低静态文件泄露风险，不能防止已控制当前 Windows 会话的恶意程序读取数据。
+- CLI 的 `config.py` 仍是本地明文配置；如使用 CLI，必须限制文件权限并禁止外传。
+- CLI 的 `config.py`、`cookies.json`、验证码、CSV 与日志均已加入 `.gitignore`。
+- Cookie 等同登录凭据，请勿上传、截图或发送给他人。
+
+## 验证
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m unittest discover -s tests -v
 ```
 
-当课程容量已经满的时候，输入结果如下
+当前版本 24 项测试覆盖模型校验、DPAPI 凭据文件、精确 BJDM 退课及最终复核、桌面两次确认、单/多目标选课编排、每轮课程列表复用、筛选放宽策略、日志轮转、课表导出和 UI 冒烟。
 
-```
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
-[+] 当前课程容量已满!
+复现 Windows 发布包：
+
+```powershell
+python -m pip install -r requirements-build.txt
+python scripts\build_release.py
 ```
 
-选课成果如下
+产物和校验文件写入 `release\`。正式 v0.3.0 的构建与验证明细见 [`docs/release-v0.3.0.md`](docs/release-v0.3.0.md)。
 
-```
-[+] 选课成功!
-[+] 课程信息如下:
-[+] 课程名称: 人工智能01
-[+] 上课时间和地点: 2-5,7-9周 星期四[5-8节]1-104<br>2-5周 星期五[1-2节]1-104<br>7-9周 星期五[1-4节]1-104
-[+] 任课教师: 陈璞花,李玲玲
-```
+## 代码结构
+
+- `app/main.py`：桌面界面、后台任务和人工验证码桥接。
+- `app/services/`：登录、选课与课表服务层。
+- `app/models.py`：课程与自动选课目标模型。
+- `courseChoose.py`：现行选课协议及 CLI。
+- `courseQuery.py`：课表读取与 CSV 解析。
+- `xidian_login.py`：登录、Cookie 和会话恢复。
+- `wisedu_des.py`：与站点 JavaScript 一致的密码加密实现。
+- `packaging/windows.spec`、`scripts/build_release.py`：可复现的 Windows 单文件发布配置。
+- `开发记录与交接.md`：接口调研、已知风险与维护手册。
+
+## 已知限制
+
+- OCR 识别并非 100% 准确，代码会自动更换验证码重试。
+- 会话可能被其它设备登录挤掉；无人值守期间不建议重复登录同一账号。
+- 当前只接入四类已确认 `lx` 语义的课程来源。
+- 退课接口与双确认已做自动化和发布包验证，但尚未用真实课程做破坏性验证。
+- `clock.py`、`utils.py` 和 `test.py` 是原仓库历史代码，接口已经失效，不属于当前选课助手运行链路。

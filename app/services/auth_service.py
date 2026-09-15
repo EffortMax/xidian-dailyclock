@@ -6,8 +6,15 @@ from typing import Callable
 
 import xidian_login as xl
 
+from app.services.credential_store import (
+    CredentialStore,
+    CredentialStoreError,
+    SavedCredentials,
+)
+
 
 LogCallback = Callable[[str], None]
+CaptchaProvider = Callable[[bytes, int], str]
 
 
 def default_data_dir() -> Path:
@@ -36,15 +43,23 @@ class AuthService:
         self.user_id = ""
         self._password = ""
         self.unattended = False
-        self.cookie_file = default_data_dir() / "cookies.json"
-        self.captcha_file = default_data_dir() / "captcha.jpg"
+        self.manual_captcha_provider: CaptchaProvider | None = None
+        data_dir = default_data_dir()
+        self.cookie_file = data_dir / "cookies.json"
+        self.captcha_file = data_dir / "captcha.jpg"
+        self.credential_store = CredentialStore(data_dir / "credentials.json")
 
     def set_unattended(self, value: bool) -> None:
         self.unattended = bool(value)
 
+    def set_manual_captcha_provider(self, provider: CaptchaProvider | None) -> None:
+        """设置桌面端人工验证码回调，避免后台线程读取终端 stdin。"""
+
+        self.manual_captcha_provider = provider
+
     def _captcha_provider(self):
         if not self.unattended:
-            return None
+            return self.manual_captcha_provider
         provider = xl.make_ddddocr_provider(verbose=False)
         if provider is None:
             raise RuntimeError(
@@ -52,7 +67,35 @@ class AuthService:
             )
         return provider
 
-    def login(self, user_id: str, password: str, force: bool = False):
+    def load_saved_credentials(self) -> SavedCredentials | None:
+        try:
+            return self.credential_store.load()
+        except CredentialStoreError as exc:
+            self.log("读取已保存账户失败：{0}".format(exc))
+            return None
+
+    def _update_saved_credentials(
+        self,
+        user_id: str,
+        password: str,
+        remember_credentials: bool,
+    ) -> None:
+        try:
+            if remember_credentials:
+                self.credential_store.save(user_id, password)
+                self.log("账户和密码已使用 Windows DPAPI 加密保存")
+            else:
+                self.credential_store.clear()
+        except CredentialStoreError as exc:
+            self.log("保存账户设置失败：{0}".format(exc))
+
+    def login(
+        self,
+        user_id: str,
+        password: str,
+        force: bool = False,
+        remember_credentials: bool = False,
+    ):
         user_id = user_id.strip()
         if not user_id or not password:
             raise ValueError("学号和密码不能为空")
@@ -73,6 +116,7 @@ class AuthService:
         ok, why = xl.login_state(self.session)
         if ok is not True:
             raise xl.LoginError("登录状态复核失败：{0}".format(why))
+        self._update_saved_credentials(user_id, password, remember_credentials)
         self.log("登录状态已确认：{0}".format(why))
         return self.session
 
