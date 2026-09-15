@@ -4,6 +4,12 @@
 
 > 本项目仅供个人学习和接口兼容性研究。请遵守学校系统规则，合理设置轮询间隔，并自行承担使用风险。
 
+## 来源与致谢
+
+本项目最初基于 [fe1w0/DailyClock_XDU_version](https://github.com/fe1w0/DailyClock_XDU_version) 的代码与思路继续维护。原项目提供了西电课程表生成和自动选课等早期实现；其仓库说明同时注明课程表功能由 [@fe1w0](https://github.com/fe1w0) 完成、自动选课功能由 [@sunzhengyu99](https://github.com/sunzhengyu99) 完成，在此一并致谢。
+
+当前维护版本已针对现行研究生选课系统重写登录与选课协议，并增加桌面界面、会话恢复、双确认退课、DPAPI 凭据保存、测试及 Windows 发布流程。更完整的来源声明见 [`NOTICE.md`](NOTICE.md)。
+
 ## 功能
 
 - PySide6 桌面应用：登录、课程查询、多目标自动选课、课表 CSV 导出。
@@ -137,6 +143,8 @@ python scripts\build_release.py
 ```
 
 产物和校验文件写入 `release\`。正式 v0.3.0 的构建与验证明细见 [`docs/release-v0.3.0.md`](docs/release-v0.3.0.md)。
+
+EXE 中可裁剪的模型、OpenCV、Pillow、Qt 插件和环境污染包清单见 [`docs/exe-size-audit.md`](docs/exe-size-audit.md)；该清单处于 Review 阶段，尚未应用到发布配置。
 
 ## 代码结构
 
